@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Microservicio de IA</title>
+  <style>
+    body{font-family:Segoe UI,Roboto,Arial;background:#f7f7fb;color:#111;margin:0;padding:20px}
+    .project-header{display:flex;align-items:center;gap:14px;background:linear-gradient(90deg,#0d47a1, #1976d2);color:#fff;padding:14px;border-radius:10px;margin-bottom:14px}
+    .project-header img{width:92px;height:92px;object-fit:contain;border-radius:8px;background:#fff;padding:6px}
+    .ph-right{display:flex;flex-direction:column}
+    .ph-title{font-size:18px;font-weight:700}
+    .ph-sub{font-size:13px;opacity:0.95;margin-top:2px}
+    .ph-meta{font-size:13px;margin-top:6px}
+    .ph-date{font-size:12px;margin-top:6px;opacity:0.95}
+    h1{font-size:20px;margin:0 0 10px}
+    .grid{display:grid;grid-template-columns:1fr 420px;gap:20px}
+    .card{background:#fff;padding:14px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+    table{border-collapse:collapse}
+    td,th{padding:6px;border:1px solid #e6e6ef;text-align:center}
+    input[type=number]{width:70px;padding:6px;border:1px solid #ddd;border-radius:4px;text-align:right}
+    .controls{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+    button{padding:8px 10px;border-radius:6px;border:0;background:#0366d6;color:#fff;cursor:pointer}
+    button.secondary{background:#6c757d}
+    .small{padding:6px 8px;font-size:13px}
+    #charts{margin-top:12px}
+    .status{font-size:13px;color:#333;margin-top:8px}
+    .muted{color:#666;font-size:13px}
+    .row-sum{width:70px}
+    label{font-size:13px}
+    .footer{margin-top:14px;font-size:13px;color:#444}
+    @media(max-width:900px){.grid{grid-template-columns:1fr}}
+    /* Botones con colores identificables */
+    #checkSums{background:#28a745}
+    #resetExample{background:#6c757d}
+    #computeV1, #computePower{background:#ff9800}
+    #evolveT, #calcStationary{background:#17a2b8}
+    #runSim{background:#6f42c1}
+    #exportExcel, #exportExcelWithCharts{background:#0056b3}
+    #exportPdf{background:#dc3545}
+    #downloadCsv{background:#343a40}
+    .example-btn{padding:6px 8px;border-radius:6px;border:0;color:#fff;cursor:pointer;margin-right:6px}
+    .example-btn.info{background:#17a2b8}
+    .example-btn.warn{background:#ffc107;color:#111}
+    .example-btn.light{background:#6c757d}
+  </style>
+  <!-- CDN: SheetJS and Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <!-- ExcelJS + FileSaver for embedding images into .xlsx, and jsPDF for PDF export -->
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+</head>
+<body>
+  <header class="project-header">
+    <div class="ph-left">
+      <img id="projectLogo" src="logo.png" alt="Logo" data-attempt="png" />
+    </div>
+    <div class="ph-right">
+      <div class="ph-title">Proyecto Final — Procesos Estocasticos</div>
+      <div class="ph-sub">Ingenieria de Software — Semestre IX</div>
+      <div class="ph-meta">Desarrollado por: <strong>Andres Camilo Castro Orozco</strong></div>
+      <div class="ph-date">Fecha: <span id="projDate"></span></div>
+    </div>
+  </header>
+  <div class="grid">
+    <div class="card">
+      <h2>Matriz de transicion P (filas = estado actual)</h2>
+      <div class="muted">Estados: S0 Operativo, S1 Recoleccion, S2 Reentrenando, S3 Pruebas, S4 Desplegado (abs), S5 Rollback (abs)</div>
+      <div style="overflow:auto;margin-top:10px">
+        <table id="matrix">
+          <thead>
+            <tr><th></th><th>S0</th><th>S1</th><th>S2</th><th>S3</th><th>S4</th><th>S5</th><th>Sum</th></tr>
+          </thead>
+          <tbody>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="controls">
+        <button id="checkSums" class="small">Verificar filas = 1</button>
+        <button id="resetExample" class="small secondary">Cargar ejemplo</button>
+        <button id="computeV1" class="small">Calcular v1 = v0·P</button>
+        <button id="computePower" class="small">Calcular P^k</button>
+        <input id="powerK" type="number" value="2" min="1" style="width:70px" />
+      </div>
+
+      <hr />
+
+      <h2>Vector inicial v0</h2>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div id="v0inputs"></div>
+        <div style="margin-left:8px">
+          <label>Ejemplo: <button id="setV0S0" class="small">v0 = S0</button></label>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="evolveT" class="small">Evolucion t pasos</button>
+        <input id="stepsT" type="number" value="20" min="1" style="width:80px" />
+        <button id="calcStationary" class="small">Calcular estacionaria (iter)</button>
+        <input id="iterCount" type="number" value="200" min="10" style="width:90px" />
+      </div>
+
+      <div class="status" id="status"></div>
+    </div>
+
+    <div class="card">
+      <h2>Resultados, Simulacion y Graficas</h2>
+      <div>
+        <canvas id="evolutionChart" width="600" height="250"></canvas>
+      </div>
+      <div id="charts">
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+          <label>Muestras (trayec.):</label>
+          <input id="simM" type="number" value="200" min="1" style="width:90px" />
+          <label>Longitud T:</label>
+          <input id="simT" type="number" value="50" min="1" style="width:70px" />
+          <button id="runSim" class="small">Correr simulacion</button>
+        </div>
+        <div style="margin-top:8px">
+          <canvas id="histChart" width="600" height="160"></canvas>
+        </div>
+      </div>
+
+      <div style="margin-top:10px" class="controls">
+        <button id="exportExcel" class="small">Exportar workbook (.xlsx)</button>
+        <button id="exportExcelWithCharts" class="small">Exportar .xlsx con graficos</button>
+        <button id="exportPdf" class="small secondary">Exportar informe PDF</button>
+        <button id="downloadCsv" class="small secondary">Descargar datos CSV</button>
+      </div>
+
+      <div class="footer">Consejo: modifique la matriz y use "Verificar filas" antes de calcular.</div>
+    </div>
+  </div>
+
+  <!-- Instrucciones de uso visibles en la pagina -->  
+      
+        <strong>Botones de ejemplo (accionan sobre la matriz y v0):</strong>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        <button class="example-btn info" id="ex_load_default" title="Carga la matriz de ejemplo por defecto">Ejemplo: P por defecto</button>
+        <button class="example-btn warn" id="ex_load_absorb" title="Carga una matriz con estados absorbentes de ejemplo">Ejemplo: P con absorbentes</button>
+        <button class="example-btn info" id="ex_set_v0s0" title="Establece v0 para empezar en S0">v0 = S0</button>
+        <button class="example-btn info" id="ex_set_v0s2" title="Establece v0 para empezar en S2">v0 = S2</button>
+        <button class="example-btn light" id="ex_show_canonical" title="Muestra la forma canonica (orden de estados, p, Q/R)">Mostrar forma canonica</button>
+        <button class="example-btn light" id="ex_show_fund" title="Calcula y muestra N, t y B si procede">Mostrar N / t / B</button>
+      </div>
+      <div id="exampleHelp" style="margin-top:10px;padding:8px;border-radius:6px;background:#fbfbfd;border:1px solid #eee;display:none"></div>
+    </div>
+  </div>
+
+  <script>
+  // set project date in header
+  try{document.getElementById('projDate').textContent = new Date().toLocaleDateString();}catch(e){}
+  // Try alternative logo filenames (png then jpg). If none exist, hide the img.
+  (function(){
+    const img = document.getElementById('projectLogo');
+    if(!img) return;
+    img.addEventListener('error', function onErr(){
+      const attempt = img.getAttribute('data-attempt');
+      if(attempt === 'png'){
+        img.setAttribute('data-attempt','jpg');
+        img.src = 'logo.jpg';
+      } else {
+        img.removeEventListener('error', onErr);
+        img.style.display = 'none';
+        console.info('logo not found: tried logo.png and logo.jpg');
+      }
+    });
+    // Trigger load attempt for png (in case browser cached broken image)
+    if(img.src && img.getAttribute('data-attempt')==='png'){
+      // reassign to force load
+      const cur = img.src; img.src = cur;
+    }
+  })();
+  // ---------- utilidades de matriz ----------
+  // Diagram upload preview and storage (for Excel export)
+  try{
+    const diagramEl = document.getElementById('diagramInput');
+    const diagramPreview = document.getElementById('diagramPreview');
+    if(diagramEl){
+      diagramEl.addEventListener('change', (e)=>{
+        const f = e.target.files && e.target.files[0];
+        if(!f) return;
+        const reader = new FileReader();
+        reader.onload = ()=>{
+          const dataUrl = reader.result;
+          if(diagramPreview){ diagramPreview.src = dataUrl; diagramPreview.style.display = 'block'; }
+          try{ window._diagramBase64 = dataUrl.split(',')[1]; window._diagramExt = f.type.indexOf('png')>=0? 'png':'jpg'; }catch(e){}
+        };
+        reader.readAsDataURL(f);
+      });
+    }
+  }catch(e){console.warn('Diagrama: no se pudo inicializar input/preview', e)}
+  // Example buttons: handlers and help display
+  try{
+    function showExampleHelp(html){const el=document.getElementById('exampleHelp');if(!el) return;el.style.display='block';el.innerHTML=html;el.scrollIntoView({behavior:'smooth',block:'center'});}
+    document.getElementById('ex_load_default').addEventListener('click', ()=>{ buildMatrixInputs(exampleP); buildV0([1,0,0,0,0,0]); showExampleHelp('<strong>Ejemplo cargado:</strong> se ha cargado la matriz por defecto y v0 = S0. Use "Verificar filas" para comprobar sumas y luego calcule iteraciones o simule.'); });
+    document.getElementById('ex_load_absorb').addEventListener('click', ()=>{ const Pabs=[[0.7,0.2,0.05,0.03,0.01,0.01],[0.3,0.5,0.1,0.05,0.03,0.02],[0,0,0.6,0.3,0.1,0],[0,0,0,0.8,0.2,0],[0,0,0,0,1,0],[0,0,0,0,0,1]]; buildMatrixInputs(Pabs); buildV0([0,1,0,0,0,0]); showExampleHelp('<strong>Ejemplo con absorbentes:</strong> Esta matriz contiene estados absorbentes (S4,S5). Puede observar la forma canonica y calcular N, t, B.'); });
+    document.getElementById('ex_set_v0s0').addEventListener('click', ()=>{ buildV0([1,0,0,0,0,0]); showExampleHelp('<strong>v0 = S0:</strong> El sistema inicia en el estado S0. Use "Evolucion t pasos" para ver la trayectoria promedio y "Correr simulacion" para trayectorias aleatorias.'); });
+    document.getElementById('ex_set_v0s2').addEventListener('click', ()=>{ buildV0([0,0,1,0,0,0]); showExampleHelp('<strong>v0 = S2:</strong> El sistema inicia en S2 (reentrenando). Esto ayuda a ver tiempos hasta absorcion desde un estado transitorio.'); });
+    document.getElementById('ex_show_canonical').addEventListener('click', ()=>{ const P=readP(); const cf = canonicalForm(P); showExampleHelp('<strong>Forma canonica:</strong><br/>Orden de estados (transitorios luego absorbentes): '+cf.order.join(', ')+'<br/>Cantidad de transitorios p = '+cf.p+'<br/>Submatriz Q ('+cf.p+'x'+cf.p+') y R si p>0. Revise la hoja "Calculos" luego de exportar.'); });
+    document.getElementById('ex_show_fund').addEventListener('click', ()=>{ const P=readP(); const fund=computeFundamental(P); if(!fund){ showExampleHelp('<strong>No hay transitorios:</strong> No se pudo calcular N (no hay estados transitorios).'); return;} let html='<strong>Matriz Fundamental N (resumen):</strong><br/>'; html+='<pre style="font-size:11px">'+fund.N.map(r=>r.map(v=>v.toFixed(4)).join(' ')).join('\n')+'</pre>'; html+='<strong>Tiempos t:</strong> '+fund.t.map(v=>v.toFixed(4)).join(', ')+'<br/>'; html+='<strong>Probabilidades B:</strong><br/>'; html+='<pre style="font-size:11px">'+fund.B.map(r=>r.map(v=>v.toFixed(4)).join(' ')).join('\n')+'</pre>'; showExampleHelp(html); });
+  }catch(e){console.warn('Example buttons init failed', e)}
+  function zeros(r,c){const a=[];for(let i=0;i<r;i++){a.push(Array(c).fill(0));}return a}
+  function cloneMat(A){return A.map(row=>row.slice())}
+  function matMul(A,B){const r=A.length,c=B[0].length,k=B.length;const C=zeros(r,c);for(let i=0;i<r;i++)for(let j=0;j<c;j++){let s=0;for(let t=0;t<k;t++)s+=A[i][t]*B[t][j];C[i][j]=s}return C}
+  function vecMat(v,P){ // v row vector
+    const c=P[0].length; const res=Array(c).fill(0);
+    for(let j=0;j<c;j++){let s=0; for(let k=0;k<v.length;k++) s+=v[k]*P[k][j]; res[j]=s}
+    return res
+  }
+  function matPow(P,k){if(k===1)return cloneMat(P);let R=cloneMat(P);for(let i=1;i<k;i++)R=matMul(R,P);return R}
+  function approxEqual(a,b,eps=1e-9){return Math.abs(a-b)<=eps}
+
+  // Gauss-Jordan inversion
+  function invertMatrix(A){const n=A.length;const M=zeros(n,2*n);for(let i=0;i<n;i++)for(let j=0;j<n;j++)M[i][j]=A[i][j];for(let i=0;i<n;i++)M[i][n+i]=1;for(let i=0;i<n;i++){let piv=i;for(let r=i;r<n;r++)if(Math.abs(M[r][i])>Math.abs(M[piv][i]))piv=r;if(Math.abs(M[piv][i])<1e-12) return null; if(piv!==i){const tmp=M[i];M[i]=M[piv];M[piv]=tmp}const div=M[i][i];for(let j=0;j<2*n;j++)M[i][j]/=div;for(let r=0;r<n;r++)if(r!==i){const mult=M[r][i];for(let j=0;j<2*n;j++)M[r][j]-=mult*M[i][j]}}const Inv=zeros(n,n);for(let i=0;i<n;i++)for(let j=0;j<n;j++)Inv[i][j]=M[i][n+j];return Inv}
+
+  // ---------- DOM construccion de la matriz y v0 ----------
+  const matrixBody=document.querySelector('#matrix tbody');
+  function buildMatrixInputs(defaultP){matrixBody.innerHTML='';for(let i=0;i<6;i++){const tr=document.createElement('tr');const th=document.createElement('th');th.textContent='S'+i;tr.appendChild(th);for(let j=0;j<6;j++){const td=document.createElement('td');const input=document.createElement('input');input.type='number';input.step='0.0001';input.min=0;input.max=1;input.value=(defaultP?defaultP[i][j]: (i===j?0.9: (i===0 && j===1?0.1:0) ));input.id=`p-${i}-${j}`;td.appendChild(input);tr.appendChild(td)}const sumTd=document.createElement('td');sumTd.className='row-sum';sumTd.id=`sum-${i}`;sumTd.textContent='';tr.appendChild(sumTd);matrixBody.appendChild(tr)} }
+
+  function buildV0(defaultV){const container=document.getElementById('v0inputs');container.innerHTML='';for(let i=0;i<6;i++){const inp=document.createElement('input');inp.type='number';inp.step='0.0001';inp.min=0;inp.max=1;inp.value=(defaultV?defaultV[i]:(i===0?1:0));inp.id=`v0-${i}`;inp.style.width='60px';container.appendChild(inp)} }
+
+  // inicializar con ejemplo
+  const exampleP=[[0.85,0.10,0.03,0.01,0.01,0.00],[0.20,0.50,0.25,0.03,0.02,0.00],[0,0,0.60,0.30,0.10,0],[0.05,0,0,0.70,0.20,0.05],[0,0,0,0,1,0],[0,0,0,0,0,1]];
+  buildMatrixInputs(exampleP); buildV0([1,0,0,0,0,0]);
+
+  function readP(){const P=[];for(let i=0;i<6;i++){const row=[];for(let j=0;j<6;j++){const v=parseFloat(document.getElementById(`p-${i}-${j}`).value)||0;row.push(v)}P.push(row)}return P}
+  function readV0(){const v=[];for(let i=0;i<6;i++)v.push(parseFloat(document.getElementById(`v0-${i}`).value)||0);return v}
+
+  document.getElementById('resetExample').onclick=()=>{buildMatrixInputs(exampleP);buildV0([1,0,0,0,0,0]);showStatus('Ejemplo cargado')}
+  document.getElementById('setV0S0').onclick=()=>{buildV0([1,0,0,0,0,0]);showStatus('v0 establecido en S0')}
+
+  document.getElementById('checkSums').onclick=()=>{const P=readP();for(let i=0;i<6;i++){const s=P[i].reduce((a,b)=>a+b,0);document.getElementById(`sum-${i}`).textContent=s.toFixed(6)}showStatus('Verificacion completada')}
+
+  function showStatus(t){document.getElementById('status').textContent=t}
+
+  // Calcular v1
+  document.getElementById('computeV1').onclick=()=>{const v0=readV0();const P=readP();const v1=vecMat(v0,P);showStatus('v1 = ['+v1.map(x=>x.toFixed(6)).join(', ')+']'); plotEvolution([v0,v1]);}
+
+  // Calcular potencia
+  document.getElementById('computePower').onclick=()=>{const k=parseInt(document.getElementById('powerK').value)||2;const P=readP();const R=matPow(P,k);showStatus(`P^${k} calculada`); console.table(R)}
+
+  // Evolucion temporal vt
+  let lastEvolution=null;
+  document.getElementById('evolveT').onclick=()=>{const T=parseInt(document.getElementById('stepsT').value)||20;const v0=readV0();const P=readP();const rows=[v0];let v=v0.slice();for(let t=1;t<=T;t++){v=vecMat(v,P);rows.push(v.slice())}lastEvolution=rows;showStatus('Evolucion hasta t='+T+' calculada'); plotEvolution(rows)}
+
+  // Plot evolution
+  let evolutionChart=null;function plotEvolution(rows){const labels=rows.map((r,i)=>i);const datasets=[];for(let s=0;s<6;s++){datasets.push({label:'S'+s,data:rows.map(r=>r[s]),tension:0.2})}
+    const ctx=document.getElementById('evolutionChart').getContext('2d');if(evolutionChart) evolutionChart.destroy();evolutionChart=new Chart(ctx,{type:'line',data:{labels, datasets},options:{responsive:true,plugins:{legend:{position:'bottom'}}}})
+  }
+
+  // Estacionaria iterativa
+  document.getElementById('calcStationary').onclick=()=>{const iters=parseInt(document.getElementById('iterCount').value)||200;const v0=readV0();const P=readP();let v=v0.slice();for(let it=0;it<iters;it++){const v2=vecMat(v,P);const diff=Math.max(...v2.map((x,i)=>Math.abs(x-v[i])));v=v2; if(diff<1e-9){showStatus('Convergio en it='+it); break}}showStatus('Estacionaria ≈ ['+v.map(x=>x.toFixed(8)).join(', ')+']');}
+
+  // CANONICAL: identificar transitorios (no absorbentes) y absorbentes (p_ii=1 y fila con ceros en otras columnas)
+  function canonicalForm(P){const absorb=[];for(let i=0;i<6;i++){let isAbs=(Math.abs(P[i][i]-1)<1e-9);for(let j=0;j<6;j++)if(j!==i && Math.abs(P[i][j])>1e-9) isAbs=false; if(isAbs) absorb.push(i)}const trans=[];for(let i=0;i<6;i++) if(!absorb.includes(i)) trans.push(i);const order=trans.concat(absorb);const n=order.length;const permP=zeros(n,n);for(let i=0;i<n;i++)for(let j=0;j<n;j++)permP[i][j]=P[order[i]][order[j]];const p=trans.length;const q=(p>0)? permP.slice(0,p).map(r=>r.slice(0,p)) : [[]];const R=(p>0)? permP.slice(0,p).map(r=>r.slice(p)) : [[]];return {order,permP,Q:q,R:R,p}
+  }
+
+  // Calcular N, t, B
+  function computeFundamental(P){const cf=canonicalForm(P);if(cf.p===0) return null;const I=zeros(cf.p,cf.p);for(let i=0;i<cf.p;i++)I[i][i]=1;const IminusQ=zeros(cf.p,cf.p);for(let i=0;i<cf.p;i++)for(let j=0;j<cf.p;j++)IminusQ[i][j]=I[i][j]-cf.Q[i][j];const inv= invertMatrix(IminusQ);if(!inv) return null;const N=inv;const ones=Array(cf.p).fill(1);const t=matMul(N, ones.map(x=>[x])).map(r=>r[0]);const B=matMul(N, cf.R);return {N,t,B,cf}
+  }
+
+  // Simulacion Monte Carlo
+  function simulateTrajectories(P,M,T){const cum=[];for(let i=0;i<6;i++){cum[i]=[];let s=0;for(let j=0;j<6;j++){s+=P[i][j];cum[i][j]=s}}const trajectories=[];for(let m=0;m<M;m++){let path=[];let cur=0;path.push(cur);for(let t=1;t<T;t++){const r=Math.random();let next=0;while(next<6 && r>cum[cur][next]) next++; if(next>=6) next=5;path.push(next);cur=next}trajectories.push(path)}return trajectories}
+
+  document.getElementById('runSim').onclick=()=>{const M=parseInt(document.getElementById('simM').value)||100;const T=parseInt(document.getElementById('simT').value)||50;const P=readP();const traj=simulateTrajectories(P,M,T); // compute absorption times if applicable
+    const absTimes=[];for(let m=0;m<M;m++){const path=traj[m];let tAbs=T;for(let t=0;t<path.length;t++){if(path[t]===4||path[t]===5){tAbs=t;break}}absTimes.push(tAbs)}
+    plotHistogram(absTimes);
+    // compute empirical vt at final t
+    const freq=Array(6).fill(0);for(let m=0;m<M;m++){const st=traj[m][T-1];freq[st]+=1}const emp=freq.map(x=>x/M);showStatus(`Simulacion: v_T empirico = [${emp.map(x=>x.toFixed(4)).join(', ')}]`);
+    // Also plot average evolution
+    const avgEvolution=zeros(T,6);for(let t=0;t<T;t++){for(let m=0;m<M;m++){avgEvolution[t][traj[m][t]]+=1}}for(let t=0;t<T;t++)for(let s=0;s<6;s++)avgEvolution[t][s]/=M;plotEvolution(avgEvolution);
+    window._lastSim={traj,absTimes,emp}
+  }
+
+  // Histogram
+  let histChart=null;function plotHistogram(data){const bins={};for(const v of data)bins[v]=(bins[v]||0)+1;const labels=Object.keys(bins).sort((a,b)=>a-b);const vals=labels.map(k=>bins[k]);const ctx=document.getElementById('histChart').getContext('2d');if(histChart) histChart.destroy();histChart=new Chart(ctx,{type:'bar',data:{labels, datasets:[{label:'Frecuencia',data:vals,backgroundColor:'#0366d6'}]},options:{plugins:{legend:{display:false}}}})}
+
+  // Exportar workbook (.xlsx) con posiciones compatibles para Excel (P en B3:G8, v0 en I3:N3)
+  document.getElementById('exportExcel').onclick=()=>{
+    const P=readP();const v0=readV0();const wb=XLSX.utils.book_new();
+    // Instrucciones detalladas para la hoja 'Instrucciones'
+    const instr=[
+      ['Entregables requeridos'],
+      ['1) Archivo Excel con hojas: Instrucciones, Cadena, Calculos, Simulacion, Graficas.'],
+      ['2) Informe breve (1 pagina) explicando el modelo, resultados y recomendaciones.'],
+      ['3) Diagrama de estados (insertarse en Excel o adjuntarse como imagen).'],
+      ['4) Paso a paso en Excel (formula por formula) para reproducir los calculos.'],
+      ['Convenciones de celdas sugeridas:'],
+      ['- Matriz P: rango B3:G8 (filas con encabezado en A3:A8 y columnas en B2:G2).'],
+      ['- Vector inicial v0: rango I3:N3 (fila de 6 elementos, p.ej. v0 = (1,0,0,0,0,0) si empezamos en S0).'],
+      ['- Vectores vt en filas sucesivas: I4:N4 para v1, I5:N5 para v2, etc.'],
+      ['Pasos y formulas recomendadas en Excel:'],
+      ['1) Verificar que las filas sumen 1: en H3 (copiar abajo): =SUM(B3:G3)'],
+      ['2) Calcular una iteracion: v1 = v0P. Seleccione I4:N4 y escriba: =MMULT(I3:N3, $B$3:$G$8)'],
+      ['3) Potencias de P: para P^2 en B11:G16: =MMULT($B$3:$G$8, $B$3:$G$8). Para P^k multiplicar iterativamente.'],
+      ['4) Evolucion temporal: I5:N5 = MMULT(I4:N4, $B$3:$G$8) y arrastrar hacia abajo hasta T pasos.'],
+      ['5) Distribucion estacionaria (iterativo): iterar vk+1 = vkP hasta que MAX(ABS(vk+1-vk)) < 1E-6. En Excel, haga 50-200 iteraciones y calcule la diferencia.'],
+      ['6) Estados absorbentes / Matriz fundamental: reordene estados a forma canonica Q,R. Calcule (I-Q) y use MINVERSE para invertir. N = (I-Q)^{-1}; t = N * 1; B = N * R. Ejemplos de formulas: =MINVERSE(L30:O33), =MMULT(P30:S33, B34:C37)'],
+      ['7) Simulacion con RAND(): calcule acumulados por fila, genere =RAND() y use =MATCH(RAND(), $B$40:$G$40, 1) para seleccionar indice; mapear con INDEX para obtener etiqueta. Repita para M trayectorias y T pasos.']
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(instr),'Instrucciones');
+
+    // --- Cadena: construir AoA con filas de manera que P quede en B3:G8 ---
+    const sheetCad=[];
+    sheetCad.push([]); // fila 1 vacia para desplazar
+    sheetCad.push(['', 'S0','S1','S2','S3','S4','S5','Sum']); // fila 2: encabezados B2:G2
+    for(let i=0;i<6;i++){
+      const row=[];
+      row[0]=`S${i}`; // A3..A8
+      for(let j=0;j<6;j++) row[1+j]=P[i][j]; // B..G
+      row[7]=null; // H columna: formula mas adelante
+      sheetCad.push(row);
+    }
+    // Anadir una fila con v0 label en I2 (separada) y v0 en I3:N3; we'll set after creating sheet
+    const ws = XLSX.utils.aoa_to_sheet(sheetCad);
+    // Sumas por fila H3:H8
+    for(let i=0;i<6;i++){const rowIdx=3+i; const cell='H'+rowIdx; ws[cell]={f:`SUM(B${rowIdx}:G${rowIdx})`};}
+    // poner encabezado v0 en I2
+    ws['I2']={v:'v0'};
+    // poner v0 en I3:N3
+    const cols=['I','J','K','L','M','N'];
+    for(let j=0;j<6;j++){const cell=cols[j]+'3'; ws[cell]={v:v0[j], t:'n'} }
+    // ajustar rango !ref hasta N8
+    ws['!ref']=XLSX.utils.encode_range({s:{c:0,r:0}, e:{c:13,r:7}});
+    XLSX.utils.book_append_sheet(wb, ws,'Cadena');
+
+    // Calculos: generar hoja con formulas que referencian la hoja 'Cadena' para que Excel las evalue
+    const calcA = [];
+    calcA.push(['Instrucciones: esta hoja contiene calculos con formulas que hacen referencia a la hoja Cadena']);
+    calcA.push([]);
+    // P (referencia a Cadena)
+    calcA.push(['Matriz P (referencias a Cadena B3:G8)']);
+    for(let i=0;i<6;i++){
+      const row=[''].concat(Array(6).fill(''));
+      for(let j=0;j<6;j++) row[1+j] = {f:`Cadena!${String.fromCharCode(66+j)}${3+i}`};
+      calcA.push(row);
+    }
+    calcA.push([]);
+    // v0 reference
+    calcA.push(['v0 (referencia)']);
+    const v0row=[''].concat(v0);
+    // place formula references to Cadena I3:N3
+    for(let j=0;j<6;j++) v0row[1+j] = {f:`Cadena!${String.fromCharCode(73+j)}3`};
+    calcA.push(v0row);
+    calcA.push([]);
+    // Example: v1 = v0 * P using MMULT -> place formula in row
+    // Excel array formulas will be visible when opened; we provide the formula as text for row result (cells B? to G?)
+    // We'll add a label and example formula cell
+    calcA.push(['v1 (formula ejemplo): celda B12 contiene formula =MMULT(I3:N3, Cadena!B3:G8) como matriz']);
+    calcA.push([]);
+    // Evolucion (si existe), copiar valores (no formulas) para referencia rapida
+    if(lastEvolution){calcA.push(['-- Evolucion (filas: t)']);for(let t=0;t<lastEvolution.length;t++){const r=['t='+t].concat(lastEvolution[t]);calcA.push(r)}}
+    // Anadir analisis de forma canonica y matriz fundamental con formulas si procede
+    const fund=computeFundamental(P);
+    if(fund){calcA.push([]);calcA.push(['-- Matriz Fundamental N (valores calculados en JS)']);for(let i=0;i<fund.N.length;i++) calcA.push(fund.N[i]);calcA.push([]);calcA.push(['Tiempos esperados hasta absorcion (t)']);calcA.push(fund.t);calcA.push([]);calcA.push(['Probabilidades de absorcion B (filas: transitorios)']);for(let i=0;i<fund.B.length;i++)calcA.push(fund.B[i])}
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(calcA),'Calculos');
+
+    // Simulacion sheet
+    const simSheet=[['Trayectoria','t-step','state']];
+    if(window._lastSim && window._lastSim.traj){const traj=window._lastSim.traj;for(let m=0;m<traj.length;m++){for(let t=0;t<traj[m].length;t++)simSheet.push([m+1,t+1,'S'+traj[m][t]])}simSheet.push([]);simSheet.push(['v_T empirico'].concat(window._lastSim.emp))}
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(simSheet),'Simulacion');
+
+    // Graficas: vt series (t en columna A)
+    const graph=[['t','S0','S1','S2','S3','S4','S5']];
+    if(lastEvolution){for(let t=0;t<lastEvolution.length;t++)graph.push([t].concat(lastEvolution[t]))}
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(graph),'Graficas');
+
+    XLSX.writeFile(wb,'markov_microservicio.xlsx');
+  }
+
+  // Exportar .xlsx usando ExcelJS e incrustar imagenes de los graficos (evolutionChart, histChart)
+  document.getElementById('exportExcelWithCharts').onclick = async ()=>{
+    try{
+      const P=readP(); const v0=readV0();
+      const workbook = new ExcelJS.Workbook();
+      const ws = workbook.addWorksheet('Cadena');
+      // Render the HTML header (.project-header) into an image and insert into the sheet (A1:N6).
+      // This preserves the exact visual style from the page. If html2canvas is unavailable/fails,
+      // fall back to a simple colored merged header.
+      try{
+        const headerEl = document.querySelector('.project-header');
+        if(headerEl && window.html2canvas){
+          // ensure header is in view for accurate rendering
+          try{ headerEl.scrollIntoView({block:'center'}); }catch(e){}
+          const canvas = await html2canvas(headerEl, {backgroundColor: null, scale: 2});
+          const headerBase64 = canvas.toDataURL('image/png').split(',')[1];
+          const headerImgId = workbook.addImage({base64: headerBase64, extension: 'png'});
+          // place image covering top area A1:N6
+          ws.addImage(headerImgId, 'A1:N6');
+          // optionally adjust some rows under the image to make space
+          for(let r=1;r<=6;r++) ws.getRow(r).height = (r===1?36:22);
+        } else {
+          // fallback: colored merged header
+          ws.mergeCells('A1:N4');
+          const headerCell = ws.getCell('A1');
+          headerCell.value = 'Proyecto Final — Procesos Estocasticos\nIngenieria de Software — Semestre IV\nDesarrollado por: Andres Camilo Castro Orozco\nFecha: ' + new Date().toLocaleDateString();
+          headerCell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+          headerCell.font = { name: 'Arial', size: 14, bold: true, color: {argb:'FFFFFFFF'} };
+          headerCell.fill = { type: 'pattern', pattern:'solid', fgColor:{argb:'FF1565C0'} };
+          for(let r=1;r<=4;r++) for(let c=1;c<=14;c++){ const cell = ws.getCell(r,c); cell.fill = { type:'pattern', pattern:'solid', fgColor:{argb:'FF1565C0'} }; cell.font = { color:{argb:'FFFFFFFF'} }; }
+          ws.getRow(1).height = 20; ws.getRow(2).height = 18; ws.getRow(3).height = 18; ws.getRow(4).height = 18;
+          for(let c=1;c<=14;c++) ws.getColumn(c).width = (c<=4?12:8);
+          // try to insert logo as before
+          try{
+            async function fetchAsBase64(url){try{const res=await fetch(url);if(!res.ok) return null;const blob=await res.blob();return await new Promise((resolve)=>{const reader=new FileReader();reader.onloadend=()=>resolve(reader.result.split(',')[1]);reader.readAsDataURL(blob);});}catch(e){return null}}
+            const logoP = await fetchAsBase64('logo.png');
+            const logoB = logoP || await fetchAsBase64('logo.jpg');
+            if(logoB){ const imgId = workbook.addImage({base64:logoB, extension: logoP? 'png':'jpg'}); ws.addImage(imgId, 'A1:D4'); }
+          }catch(e){ console.warn('No se pudo insertar logo en XLSX (fallback):', e) }
+        }
+      }catch(e){console.warn('Error rendering header image for XLSX:', e);} 
+      // Headers
+      ws.getRow(2).values = ['', 'S0','S1','S2','S3','S4','S5','Sum'];
+      // P rows starting row 3
+      for(let i=0;i<6;i++){
+        const row = [ `S${i}` ].concat(P[i]);
+        ws.getRow(3+i).values = row;
+        // Add formula for sum in column H
+        ws.getCell('H'+(3+i)).value = {formula: `SUM(B${3+i}:G${3+i})`};
+      }
+      // v0 in I3:N3
+      ws.getCell('I2').value = 'v0';
+      const cols = ['I','J','K','L','M','N'];
+      for(let j=0;j<6;j++) ws.getCell(cols[j]+'3').value = v0[j];
+
+      // Add Graficas data sheet
+      const gws = workbook.addWorksheet('Graficas');
+      gws.addRow(['t','S0','S1','S2','S3','S4','S5']);
+      if(lastEvolution){ for(let t=0;t<lastEvolution.length;t++) gws.addRow([t].concat(lastEvolution[t])); }
+
+      // Capture canvases as base64
+      function getBase64FromCanvas(id){ const c=document.getElementById(id); if(!c) return null; return c.toDataURL('image/png').split(',')[1]; }
+      const evoBase64 = getBase64FromCanvas('evolutionChart');
+      const histBase64 = getBase64FromCanvas('histChart');
+
+      // Try to include a diagram image if provided by the user (via file input) or present as diagram.png/jpg
+      try{
+        let diagramBase64 = window._diagramBase64 || null;
+        let diagramExt = window._diagramExt || null;
+        if(!diagramBase64){
+          // helper to fetch a local file and convert to base64
+          async function fetchAsBase64Simple(url, ext){
+            try{ const res = await fetch(url); if(!res.ok) return null; const blob = await res.blob(); return await new Promise((resolve)=>{ const r = new FileReader(); r.onloadend = ()=> resolve({base64: r.result.split(',')[1], ext}); r.readAsDataURL(blob); }); }catch(e){ return null; }
+          }
+          const fpng = await fetchAsBase64Simple('diagram.png','png');
+          const fjpg = await fetchAsBase64Simple('diagram.jpg','jpg');
+          const fetched = fpng || fjpg;
+          if(fetched){ diagramBase64 = fetched.base64; diagramExt = fetched.ext; }
+        }
+        if(diagramBase64){
+          try{
+            const imgIdDiag = workbook.addImage({base64: diagramBase64, extension: diagramExt || 'png'});
+            // add a separate sheet for the diagram so it is visible
+            const dws = workbook.addWorksheet('Diagrama');
+            dws.addImage(imgIdDiag, 'A1:H20');
+          }catch(e){ console.warn('No se pudo insertar diagrama en XLSX:', e); }
+        }
+      }catch(e){ console.warn('Error intentando incluir diagrama:', e); }
+
+      if(evoBase64){
+        const imageId = workbook.addImage({base64: evoBase64, extension: 'png'});
+        ws.addImage(imageId, {tl: {col:0, row:9}, ext: {width: 640, height: 240}});
+      }
+      if(histBase64){
+        const imageId2 = workbook.addImage({base64: histBase64, extension: 'png'});
+        ws.addImage(imageId2, {tl: {col:8, row:9}, ext: {width: 360, height: 180}});
+      }
+
+      // Add defined names for P and v0 so Excel users can refer to them
+      try{
+        if(!workbook.definedNames) workbook.definedNames = workbook._definedNames || {add:()=>{}};
+        // standard absolute references
+        workbook.definedNames.add('P', 'Cadena!$B$3:$G$8');
+        workbook.definedNames.add('v0', 'Cadena!$I$3:$N$3');
+      }catch(e){console.warn('No se pudieron anadir nombres de rango (definedNames):', e)}
+
+      // If N, t, B are available, write them into a 'Calculos' sheet and register names
+      const fund = computeFundamental(P);
+      if(fund){
+        const cws = workbook.addWorksheet('Calculos');
+        // Write N starting at A1
+        cws.addRow(['Matriz Fundamental N']);
+        for(let i=0;i<fund.N.length;i++) cws.addRow(fund.N[i]);
+        let startRow = 2;
+        const nRows = fund.N.length;
+        // name for N
+        try{ workbook.definedNames.add('N', `Calculos!$A$${startRow}:$${String.fromCharCode(64+fund.N.length)}$${startRow + nRows -1}`) }catch(e){}
+        // write t below
+        const tRow = startRow + nRows + 1;
+        cws.getRow(tRow).values = ['Tiempos hasta absorcion'].concat(fund.t);
+        try{ workbook.definedNames.add('t_abs', `Calculos!$B$${tRow}:$${String.fromCharCode(64+fund.t.length)}$${tRow}`) }catch(e){}
+        // write B below
+        const bStart = tRow + 2;
+        cws.addRow([]);
+        cws.getRow(bStart).values = ['Probabilidades de absorcion (B)'];
+        for(let i=0;i<fund.B.length;i++) cws.addRow(fund.B[i]);
+        try{ workbook.definedNames.add('B_abs', `Calculos!$A$${bStart+1}:$${String.fromCharCode(64+fund.B[0].length)}$${bStart + fund.B.length}`) }catch(e){}
+      }
+
+      // Add a Simulacion sheet with full trajectories and summaries (include real simulation results)
+      const sws = workbook.addWorksheet('Simulacion');
+      sws.addRow(['Muestras', parseInt(document.getElementById('simM').value||200)]);
+      sws.addRow(['Longitud T', parseInt(document.getElementById('simT').value||50)]);
+      sws.addRow([]);
+      // Prepare header for detailed trajectories with numeric state column
+      if(window._lastSim && window._lastSim.traj){
+        // To avoid extremely large exports, cap exported trajectories to maxExportTraj (sample first ones)
+        const trajAll = window._lastSim.traj;
+        const maxExportTraj = 500; // configurable cap
+        const exportCount = Math.min(trajAll.length, maxExportTraj);
+        const isTruncated = trajAll.length > exportCount;
+        sws.addRow(['Nota', isTruncated? `Se exportan ${exportCount} de ${trajAll.length} trayectorias (limite)` : 'Se exportan todas las trayectorias']);
+        sws.addRow([]);
+        sws.addRow(['Trayectoria','t-step','state_label','state_num']);
+        const traj = trajAll.slice(0, exportCount);
+        for(let m=0;m<traj.length;m++){
+          for(let t=0;t<traj[m].length;t++){
+            sws.addRow([m+1, t+1, 'S'+traj[m][t], traj[m][t]]);
+          }
+        }
+        sws.addRow([]);
+        // empirical distribution at final time
+        if(window._lastSim.emp) sws.addRow(['v_T empirico'].concat(window._lastSim.emp));
+        sws.addRow([]);
+        // Absorption times summary
+        if(window._lastSim.absTimes){
+          sws.addRow(['Tiempos hasta absorcion (por trayectoria)']);
+          sws.addRow(['Trayectoria','t_abs']);
+          for(let m=0;m<window._lastSim.absTimes.length;m++) sws.addRow([m+1, window._lastSim.absTimes[m]]);
+          sws.addRow([]);
+        }
+        // Counts per final state at T
+        try{
+          const Tval = parseInt(document.getElementById('simT').value||50);
+          const finalCounts = Array(6).fill(0);
+          for(let m=0;m<traj.length;m++){ const st = traj[m][Math.max(0, Math.min(traj[m].length-1, Tval-1))]; finalCounts[st]++; }
+          sws.addRow(['Conteo estado final (t=T)'].concat(finalCounts));
+        }catch(e){ sws.addRow(['Conteo estado final: no disponible']); }
+
+        // Apply simple formatting: set column widths and numeric formats
+        try{
+          sws.getColumn(1).width = 12; // Trayectoria
+          sws.getColumn(2).width = 10; // t-step
+          sws.getColumn(3).width = 12; // state_label
+          sws.getColumn(4).width = 12; // state_num
+          // set number format for columns 1,2,4
+          for(let i=2;i<=4;i++) sws.getColumn(i).numFmt = '#,##0';
+        }catch(e){/* ignore formatting errors */}
+
+        // Create a resumen sheet with aggregated stats
+        try{
+          const rws = workbook.addWorksheet('ResumenSim');
+          // Final counts per state (computed over ALL trajectories, not just exported subset)
+          const Tval2 = parseInt(document.getElementById('simT').value||50);
+          const finalCounts2 = Array(6).fill(0);
+          for(let m=0;m<trajAll.length;m++){ const st = trajAll[m][Math.max(0, Math.min(trajAll[m].length-1, Tval2-1))]; finalCounts2[st]++; }
+          rws.addRow(['Estado','Conteo_final','Proporcion_final']);
+          for(let s=0;s<6;s++) rws.addRow(['S'+s, finalCounts2[s], (finalCounts2[s]/trajAll.length)]);
+          // Absorption stats (use all absTimes if available)
+          if(window._lastSim.absTimes && window._lastSim.absTimes.length>0){
+            const at = window._lastSim.absTimes.filter(x=>typeof x==='number');
+            const mean = at.reduce((a,b)=>a+b,0)/at.length;
+            const sorted = at.slice().sort((a,b)=>a-b);
+            const median = sorted.length%2===1? sorted[(sorted.length-1)/2] : (sorted[sorted.length/2-1]+sorted[sorted.length/2])/2;
+            rws.addRow([]);
+            rws.addRow(['Absorption_stats','']);
+            rws.addRow(['mean_t_abs', mean]);
+            rws.addRow(['median_t_abs', median]);
+          }
+          // set widths
+          rws.getColumn(1).width = 14; rws.getColumn(2).width = 14; rws.getColumn(3).width = 16;
+        }catch(e){ console.warn('No se pudo crear hoja ResumenSim:', e) }
+
+        // Create pivot-like sheet: counts per state for each time t (PivotTiempoEstado)
+        try{
+          const pws = workbook.addWorksheet('PivotTiempoEstado');
+          const Tpivot = trajAll[0] ? trajAll[0].length : (parseInt(document.getElementById('simT').value||50));
+          // header
+          pws.addRow(['t','S0','S1','S2','S3','S4','S5']);
+          for(let t=0;t<Tpivot;t++){
+            const counts = Array(6).fill(0);
+            for(let m=0;m<trajAll.length;m++){
+              const st = trajAll[m][Math.max(0, Math.min(trajAll[m].length-1, t))];
+              counts[st]++;
+            }
+            pws.addRow([t+1].concat(counts));
+          }
+          // set widths for readability
+          pws.getColumn(1).width = 8; for(let c=2;c<=7;c++) pws.getColumn(c).width = 12;
+        }catch(e){ console.warn('No se pudo crear PivotTiempoEstado:', e) }
+      } else {
+        sws.addRow(['Nota: no hay datos de simulacion disponibles. Ejecute la simulacion antes de exportar para incluir resultados completos.']);
+        try{ sws.getColumn(1).width = 40; }catch(e){}
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      saveAs(new Blob([buffer]), 'markov_microservicio_con_graficos.xlsx');
+    }catch(err){console.error(err); alert('Error exportando XLSX con graficos: '+err.message)}
+  }
+
+  // Exportar informe PDF con los graficos (usa jsPDF)
+  document.getElementById('exportPdf').onclick = ()=>{
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({orientation:'portrait'});
+    const P=readP(); const v0=readV0();
+    // Dibujar un encabezado sencillo (rectangulo azul y texto blanco) para asegurar visibilidad
+    try{
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const headerX = 10, headerY = 10, headerW = pageWidth - 20, headerH = 48;
+      doc.setFillColor(21,101,192); // #1565C0
+      doc.rect(headerX, headerY, headerW, headerH, 'F');
+      doc.setTextColor(255,255,255);
+      doc.setFontSize(16);
+      doc.text('Proyecto Final — Procesos Estocasticos', headerX + 14, headerY + 18);
+      doc.setFontSize(10);
+      doc.text('Ingenieria de Software — Semestre IV', headerX + 14, headerY + 28);
+      doc.setFontSize(9);
+      doc.text('Desarrollado por: Andres Camilo Castro Orozco', headerX + 14, headerY + 38);
+      doc.setTextColor(0,0,0);
+      doc.setFontSize(11);
+      doc.text('Resumen: modelo con estados S0..S5. Ver hojas adjuntas.', 14, headerY + headerH + 12);
+    }catch(e){ console.warn('Error dibujando encabezado en PDF', e); }
+
+    // Pagina: Modelo y datos
+    doc.addPage(); doc.setFontSize(14); doc.text('Modelo y datos', 14, 16);
+    doc.setFontSize(10);
+    doc.text('Vector inicial v0: ['+v0.map(x=>x.toFixed(4)).join(', ')+']', 14, 30);
+    doc.text('Fila S0 (P): ['+P[0].map(x=>x.toFixed(4)).join(', ')+']', 14, 38);
+
+    // Pagina: Graficas
+    doc.addPage(); doc.setFontSize(14); doc.text('Graficas', 14, 16);
+    const evoCanvas=document.getElementById('evolutionChart');
+    const histCanvas=document.getElementById('histChart');
+    try{
+      if(evoCanvas){ const evoData = evoCanvas.toDataURL('image/png'); doc.addImage(evoData, 'PNG', 14, 26, 180, 90); }
+      if(histCanvas){ const histData = histCanvas.toDataURL('image/png'); doc.addImage(histData, 'PNG', 14, 120, 180, 80); }
+    }catch(err){ console.warn('No se pudieron anadir imagenes al PDF:', err); }
+
+    // Calculos
+    const fundPDF = computeFundamental(P);
+    doc.addPage(); doc.setFontSize(14); doc.text('Resultados: Matriz Fundamental, tiempos y probabilidades de absorcion', 14, 16);
+    let y = 28;
+    if(fundPDF){
+      doc.setFontSize(11); doc.text('Matriz Fundamental N (fila por fila):', 14, y); y+=6; doc.setFontSize(9);
+      for(let i=0;i<fundPDF.N.length;i++){ doc.text(fundPDF.N[i].map(v=>v.toFixed(4)).join('   '), 14, y); y+=6; if(y>270){ doc.addPage(); y=20 }}
+      y+=4; doc.setFontSize(11); doc.text('Tiempos esperados hasta absorcion (t):', 14, y); y+=6; doc.setFontSize(9); doc.text(fundPDF.t.map(v=>v.toFixed(4)).join(', '), 14, y); y+=10;
+      doc.setFontSize(11); doc.text('Probabilidades de absorcion B:', 14, y); y+=6; doc.setFontSize(9);
+      for(let i=0;i<fundPDF.B.length;i++){ doc.text(fundPDF.B[i].map(v=>v.toFixed(4)).join('   '), 14, y); y+=6; if(y>270){ doc.addPage(); y=20 }}
+    } else {
+      doc.setFontSize(10); doc.text('No se detectaron estados transitorios/absorbentes para calcular N.', 14, y); y+=8;
+    }
+
+    // Pagina final
+    doc.addPage(); doc.setFontSize(14); doc.text('Conclusiones y recomendaciones', 14, 16); doc.setFontSize(10);
+    doc.text('- Revisar probabilidades de drift y reentrenamiento.', 14, 28);
+    doc.text('- Analizar tiempos hasta absorcion y politicas de reentrenamiento.', 14, 36);
+    doc.text('- Usar los nombres de rango P y v0 en Excel para replicar calculos rapidamente.', 14, 44);
+    doc.save('informe_markov_microservicio.pdf');
+  }
+
+  // CSV quick download of P
+  document.getElementById('downloadCsv').onclick=()=>{const P=readP();let csv='';csv+='state,'+['S0','S1','S2','S3','S4','S5'].join(',')+'\n';for(let i=0;i<6;i++){csv+=`S${i},`+P[i].join(',')+'\n'};const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='P_matrix.csv';a.click();URL.revokeObjectURL(url)}
+
+  // Inicial small status
+  showStatus('Listo. Verifique la matriz y use los botones para calcular, simular o exportar.')
+  </script>
+</body>
+</html>
